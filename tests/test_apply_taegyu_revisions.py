@@ -41,6 +41,18 @@ def _canonical_hash(element: etree._Element) -> str:
     return hashlib.sha256(serialized).hexdigest()
 
 
+def _main_text_run_style(paragraph: etree._Element) -> str:
+    return next(
+        child.get("charPrIDRef", "")
+        for child in paragraph
+        if _local_name(child.tag) == "run"
+        and any(
+            _local_name(text_node.tag) == "t" and bool(text_node.text)
+            for text_node in child.iter()
+        )
+    )
+
+
 def test_build_revised_hwpx_preserves_unrelated_content(tmp_path: Path) -> None:
     output = tmp_path / "revised.hwpx"
 
@@ -140,3 +152,46 @@ def test_build_revised_hwpx_keeps_footnotes_as_footnotes(tmp_path: Path) -> None
         == 1
     )
     assert "OpenAI, “Overview of OpenAI Crawlers”" not in _direct_text(paragraph_49)
+
+
+def test_added_paragraphs_use_their_section_body_styles(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "revised.hwpx"
+
+    build_revised_hwpx(SOURCE, TRACKED, output)
+
+    with zipfile.ZipFile(output) as output_zip:
+        output_paragraphs = _top_level_paragraphs(
+            output_zip.read("Contents/section0.xml")
+        )
+
+    chapter_two_body = next(
+        paragraph
+        for paragraph in output_paragraphs
+        if _direct_text(paragraph).startswith("기존 검색엔진 크롤링은")
+    )
+    added_chapter_two_body = next(
+        paragraph
+        for paragraph in output_paragraphs
+        if _direct_text(paragraph).startswith("결국 검색 목적과 생성형 인공지능")
+    )
+    assert _main_text_run_style(added_chapter_two_body) == _main_text_run_style(
+        chapter_two_body
+    )
+    assert added_chapter_two_body.attrib == chapter_two_body.attrib
+
+    introduction_body = next(
+        paragraph
+        for paragraph in output_paragraphs
+        if _direct_text(paragraph).startswith("생성형 인공지능 학습용 웹 크롤링은")
+    )
+    added_introduction_body = next(
+        paragraph
+        for paragraph in output_paragraphs
+        if _direct_text(paragraph).startswith("본고의 핵심적인 기여는")
+    )
+    assert _main_text_run_style(
+        added_introduction_body
+    ) == _main_text_run_style(introduction_body)
+    assert added_introduction_body.attrib == introduction_body.attrib

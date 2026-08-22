@@ -222,12 +222,16 @@ def build_revised_hwpx(
         add_i_2 = _new_body_paragraph(body_template, blocks["ADD-I-2"])
         _insert_after(root, target_paragraphs["25"], add_i_2)
         _rewrite_paragraph(roadmap, blocks["ADD-I-3"])
-        _rewrite_paragraph(blank_after_roadmap, blocks["ADD-I-4"])
+        add_i_4 = _new_body_paragraph(body_template, blocks["ADD-I-4"])
+        root.replace(blank_after_roadmap, add_i_4)
         _rewrite_paragraph(
             blank_after_access_control,
             blocks["ADD-II-1"],
         )
-        add_ii_2 = _new_body_paragraph(body_template, blocks["ADD-II-2"])
+        add_ii_2 = _new_body_paragraph(
+            target_paragraphs["49"],
+            blocks["ADD-II-2"],
+        )
         _insert_after(root, target_paragraphs["49"], add_ii_2)
         _rewrite_paragraph(
             blank_after_conclusion,
