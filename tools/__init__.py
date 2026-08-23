@@ -1,1 +1,1 @@
-"""HWPX transformation helpers."""
+"""HWPX document tooling for the paper revision workflow."""

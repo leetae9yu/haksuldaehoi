@@ -6,7 +6,7 @@
 # ///
 #
 # ─── How to run ───
-# uv run tools/apply_taegyu_revisions.py SOURCE.hwpx TRACKED.md OUTPUT.hwpx
+# uv run -m tools.apply_taegyu_revisions SOURCE.hwpx TRACKED.md OUTPUT.hwpx
 
 from __future__ import annotations
 
@@ -19,13 +19,19 @@ from typing import Final
 
 from lxml import etree
 
-HP: Final = "http://www.hancom.co.kr/hwpml/2011/paragraph"
+from tools.hwpx_xml import ADDED_FOOTNOTE_RANGES, HP
+from tools.hwpx_xml import direct_text as _direct_text
+from tools.hwpx_xml import footnote_texts as _footnote_texts
+from tools.hwpx_xml import local_name as _local_name
+
 BLOCK_PATTERN: Final = re.compile(r"^\[([^\]]+)\]\s+(.*)$")
 REPLACEMENT_STARTS: Final = {
     "23": "생성형 인공지능 학습용 웹 크롤링은",
     "25": "부정경쟁방지법 제2조 제1호 (카)목은",
     "30": "웹 크롤링은 자동화된 프로그램이",
+    "32": "이와 관련하여 robots.txt는",
     "36": "생성형 인공지능(이하 ‘AI’) 모델은",
+    "38": "이러한 과정을 구체적으로 살펴보면",
     "40": "생성형 AI 학습에 이용되는 데이터의 범위는",
     "42": "(2) 생성형 AI 학습용 웹 크롤링의 증가와 국내외 입법동향",
     "49": "기존 검색엔진 크롤링은",
@@ -35,36 +41,6 @@ REPLACEMENT_STARTS: Final = {
 
 class RevisionFormatError(RuntimeError):
     """Raised when a tracked revision cannot be mapped safely."""
-
-
-def _local_name(tag: str | bytes | etree.QName) -> str:
-    return str(tag).rsplit("}", 1)[-1]
-
-
-def _direct_text(paragraph: etree._Element) -> str:
-    return "".join(
-        text_node.text or ""
-        for child in paragraph
-        if _local_name(child.tag) == "run"
-        for text_node in child.iter()
-        if _local_name(text_node.tag) == "t"
-        and not any(
-            _local_name(ancestor.tag) == "footNote"
-            for ancestor in text_node.iterancestors()
-        )
-    ).strip()
-
-
-def _footnote_texts(paragraph: etree._Element) -> tuple[str, ...]:
-    return tuple(
-        "".join(
-            text_node.text or ""
-            for text_node in footnote.iter()
-            if _local_name(text_node.tag) == "t"
-        ).strip()
-        for footnote in paragraph.iter()
-        if _local_name(footnote.tag) == "footNote"
-    )
 
 
 def _parse_blocks(path: Path) -> dict[str, str]:
@@ -163,6 +139,103 @@ def _new_body_paragraph(
     return paragraph
 
 
+def _split_added_footnote(
+    block_id: str,
+    text: str,
+) -> tuple[str, str, str]:
+    citation_start, citation_end = ADDED_FOOTNOTE_RANGES[block_id]
+    start = text.index(citation_start)
+    end = len(text) if citation_end is None else text.index(citation_end)
+    return text[:start], text[start:end].strip(), text[end:]
+
+
+def _new_footnote_control(
+    template: etree._Element,
+    citation: str,
+    inst_id: int,
+) -> etree._Element:
+    control = copy.deepcopy(template)
+    footnote = next(
+        element
+        for element in control.iter()
+        if _local_name(element.tag) == "footNote"
+    )
+    footnote.set("instId", str(inst_id))
+    text_nodes = [
+        element
+        for element in footnote.iter()
+        if _local_name(element.tag) == "t"
+    ]
+    text_nodes[0].text = f" {citation}"
+    for text_node in text_nodes[1:]:
+        text_node.text = ""
+    for linesegarray in [
+        element
+        for element in footnote.iter()
+        if _local_name(element.tag) == "linesegarray"
+    ]:
+        parent = linesegarray.getparent()
+        if parent is not None:
+            parent.remove(linesegarray)
+    return control
+
+
+def _new_body_paragraph_with_footnote(
+    template: etree._Element,
+    block_id: str,
+    text: str,
+    footnote_template: etree._Element,
+    inst_id: int,
+) -> etree._Element:
+    paragraph = copy.deepcopy(template)
+    first_run = next(
+        child for child in paragraph if _local_name(child.tag) == "run"
+    )
+    char_reference = first_run.get("charPrIDRef", "19")
+    before, citation, after = _split_added_footnote(block_id, text)
+    for child in list(paragraph):
+        paragraph.remove(child)
+
+    for part in (before,):
+        run = etree.SubElement(paragraph, f"{{{HP}}}run")
+        run.set("charPrIDRef", char_reference)
+        text_node = etree.SubElement(run, f"{{{HP}}}t")
+        text_node.text = part
+
+    footnote_run = etree.SubElement(paragraph, f"{{{HP}}}run")
+    footnote_run.set("charPrIDRef", char_reference)
+    footnote_run.append(
+        _new_footnote_control(
+            footnote_template,
+            citation,
+            inst_id,
+        )
+    )
+
+    if after:
+        run = etree.SubElement(paragraph, f"{{{HP}}}run")
+        run.set("charPrIDRef", char_reference)
+        text_node = etree.SubElement(run, f"{{{HP}}}t")
+        text_node.text = after
+    return paragraph
+
+
+def _renumber_footnotes(root: etree._Element) -> None:
+    footnotes = [
+        element
+        for element in root.iter()
+        if _local_name(element.tag) == "footNote"
+    ]
+    for number, footnote in enumerate(footnotes, start=1):
+        footnote.set("number", str(number))
+        for auto_number in footnote.iter():
+            if (
+                _local_name(auto_number.tag) == "autoNum"
+                and auto_number.get("numType") == "FOOTNOTE"
+            ):
+                auto_number.set("num", str(number))
+
+
 def _insert_after(
     root: etree._Element,
     anchor: etree._Element,
@@ -219,7 +292,20 @@ def build_revised_hwpx(
         body_template = target_paragraphs["23"]
         add_i_1 = _new_body_paragraph(body_template, blocks["ADD-I-1"])
         _insert_after(root, target_paragraphs["23"], add_i_1)
-        add_i_2 = _new_body_paragraph(body_template, blocks["ADD-I-2"])
+        footnote_template = _footnote_controls(target_paragraphs["23"])[0]
+        existing_inst_ids = [
+            int(footnote.get("instId", "0"))
+            for footnote in root.iter()
+            if _local_name(footnote.tag) == "footNote"
+        ]
+        next_inst_id = max(existing_inst_ids, default=0) + 1
+        add_i_2 = _new_body_paragraph_with_footnote(
+            body_template,
+            "ADD-I-2",
+            blocks["ADD-I-2"],
+            footnote_template,
+            next_inst_id,
+        )
         _insert_after(root, target_paragraphs["25"], add_i_2)
         _rewrite_paragraph(roadmap, blocks["ADD-I-3"])
         add_i_4 = _new_body_paragraph(body_template, blocks["ADD-I-4"])
@@ -239,8 +325,15 @@ def build_revised_hwpx(
         )
         add_vi_2 = _new_body_paragraph(body_template, blocks["ADD-VI-2"])
         _insert_after(root, blank_after_conclusion, add_vi_2)
-        add_vi_3 = _new_body_paragraph(body_template, blocks["ADD-VI-3"])
+        add_vi_3 = _new_body_paragraph_with_footnote(
+            body_template,
+            "ADD-VI-3",
+            blocks["ADD-VI-3"],
+            footnote_template,
+            next_inst_id + 1,
+        )
         _insert_after(root, add_vi_2, add_vi_3)
+        _renumber_footnotes(root)
 
         section_xml = etree.tostring(
             root,
@@ -277,7 +370,8 @@ def main() -> int:
     """Build one revised HWPX from command-line paths."""
     if len(sys.argv) != 4:
         print(
-            "Usage: apply_taegyu_revisions.py SOURCE.hwpx TRACKED.md OUTPUT.hwpx",
+            "Usage: python -m tools.apply_taegyu_revisions "
+            "SOURCE.hwpx TRACKED.md OUTPUT.hwpx",
             file=sys.stderr,
         )
         return 2
