@@ -13,6 +13,7 @@ from __future__ import annotations
 import copy
 import sys
 import zipfile
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
@@ -52,6 +53,10 @@ SECTIONS: Final = (
         end_prefix="각주 및 참고문헌은",
     ),
 )
+BOUNDARY_ALIASES: Final = {
+    "I. 서론": ("I. 서론", "Ⅰ. 서론"),
+    "VI. 결론": ("VI. 결론", "Ⅵ. 결론"),
+}
 
 
 class SectionSplitError(ValueError):
@@ -59,10 +64,15 @@ class SectionSplitError(ValueError):
 
 
 def _unique_index(texts: list[str], prefix: str) -> int:
+    markers = BOUNDARY_ALIASES.get(prefix, (prefix,))
     matches = [
         index
         for index, text in enumerate(texts)
-        if text.startswith(prefix)
+        if not text.startswith("▶목 차◀")
+        and any(
+            text.startswith(marker) or text.endswith(marker)
+            for marker in markers
+        )
     ]
     if len(matches) != 1:
         raise SectionSplitError(
@@ -142,6 +152,8 @@ def _write_section_archive(
 def split_taegyu_sections(
     source_path: Path,
     output_directory: Path,
+    *,
+    filename_overrides: Mapping[str, str] | None = None,
 ) -> dict[str, Path]:
     """Create standalone HWPX files for Taegyu's three owned sections."""
     output_directory.mkdir(parents=True, exist_ok=True)
@@ -167,7 +179,15 @@ def split_taegyu_sections(
                 start,
                 end,
             )
-            output_path = output_directory / spec.filename
+            filename = (
+                spec.filename
+                if filename_overrides is None
+                else filename_overrides.get(
+                    spec.key,
+                    spec.filename,
+                )
+            )
+            output_path = output_directory / filename
             _write_section_archive(
                 source_zip,
                 output_path,
