@@ -10,7 +10,7 @@ from tools.apply_taegyu_revisions import build_revised_hwpx
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "본논문_1차.hwpx"
-TRACKED = ROOT / "revisions" / "05_taegyu_final_with_ids.md"
+TRACKED = ROOT / "revisions" / "07_intro_final_with_ids.md"
 
 
 def _local_name(tag: str | bytes | etree.QName) -> str:
