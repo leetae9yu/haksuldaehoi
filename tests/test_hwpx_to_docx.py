@@ -101,9 +101,14 @@ def test_convert_preserves_text_style_table_and_footnote(tmp_path: Path) -> None
         assert archive.testzip() is None
         document = etree.fromstring(archive.read("word/document.xml"))
         footnotes = etree.fromstring(archive.read("word/footnotes.xml"))
+        settings = etree.fromstring(archive.read("word/settings.xml"))
+        styles = etree.fromstring(archive.read("word/styles.xml"))
         document_text = "".join(str(text) for text in document.itertext())
         footnote_text = "".join(str(text) for text in footnotes.itertext())
         document_xml = etree.tostring(document, encoding="unicode")
+        footnotes_xml = etree.tostring(footnotes, encoding="unicode")
+        settings_xml = etree.tostring(settings, encoding="unicode")
+        styles_xml = etree.tostring(styles, encoding="unicode")
 
     assert "논문 제목" in document_text
     assert "본문 문장" in document_text
@@ -111,5 +116,23 @@ def test_convert_preserves_text_style_table_and_footnote(tmp_path: Path) -> None
     assert "각주 내용" in footnote_text
     assert "<w:b/>" in document_xml
     assert 'w:val="123456"' in document_xml
+    assert '<w:rStyle w:val="FootnoteAnchor"/>' in document_xml
+    assert '<w:footnoteReference w:id="2"/>' in document_xml
     assert "<w:footnoteReference" in document_xml
+    assert "<w:footnoteReference" not in document_xml.replace(
+        '<w:footnoteReference w:id="2"/>', ""
+    )
+    assert "<w:t>)</w:t>" not in document_xml
+    assert '<w:footnote w:id="0" w:type="separator">' in footnotes_xml
+    assert '<w:footnote w:id="1" w:type="continuationSeparator">' in footnotes_xml
+    assert '<w:footnote w:id="2">' in footnotes_xml
+    assert '<w:pStyle w:val="Footnote"/>' in footnotes_xml
+    assert '<w:rStyle w:val="FootnoteCharacters"/>' in footnotes_xml
+    assert "<w:footnoteRef/>" in footnotes_xml
+    assert "<w:t>)" not in footnotes_xml
+    assert '<w:footnote w:id="0"/>' in settings_xml
+    assert '<w:footnote w:id="1"/>' in settings_xml
+    assert 'w:styleId="FootnoteCharacters"' in styles_xml
+    assert 'w:styleId="FootnoteAnchor"' in styles_xml
+    assert 'w:styleId="Footnote"' in styles_xml
     assert validate_documents(source, target)["valid"] is True

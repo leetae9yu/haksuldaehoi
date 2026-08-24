@@ -8,7 +8,6 @@ from pathlib import Path
 from docx import Document
 from docx.document import Document as DocumentObject
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_TABLE_ALIGNMENT
-from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.table import Table, _Cell
 from docx.text.paragraph import Paragraph
@@ -48,7 +47,7 @@ class Converter:
     def add_footnote_reference(
         self, paragraph: Paragraph, note: etree._Element
     ) -> None:
-        note_id = len(self.footnotes) + 1
+        note_id = len(self.footnotes) + 2
         paragraphs = [
             "".join(str(text) for text in node.itertext())
             for node in note.iter()
@@ -57,11 +56,8 @@ class Converter:
         self.footnotes.append([text for text in paragraphs if text])
         run = paragraph.add_run()
         properties = run._r.get_or_add_rPr()
-        etree.SubElement(properties, qn("w:rStyle"), {qn("w:val"): "FootnoteReference"})
+        etree.SubElement(properties, qn("w:rStyle"), {qn("w:val"): "FootnoteAnchor"})
         etree.SubElement(run._r, qn("w:footnoteReference"), {qn("w:id"): str(note_id)})
-        suffix = OxmlElement("w:t")
-        suffix.text = ")"
-        run._r.append(suffix)
 
     def fill_paragraph(self, paragraph: Paragraph, source: etree._Element) -> None:
         if self.formats is None:

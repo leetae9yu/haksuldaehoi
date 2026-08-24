@@ -59,20 +59,20 @@ def _source_footnotes(section: etree._Element) -> list[str]:
 def _target_footnotes(footnotes: etree._Element) -> list[str]:
     result: list[str] = []
     for note in footnotes:
-        note_id = next(
+        note_type = next(
             (
                 value
                 for key, value in note.attrib.items()
-                if etree.QName(key).localname == "id"
+                if etree.QName(key).localname == "type"
             ),
-            "0",
+            None,
         )
-        if int(note_id) <= 0:
+        if note_type is not None:
             continue
         text = _normalized(
             [node.text or "" for node in note.iter() if _local(node) == "t"]
         )
-        result.append(text.removeprefix(")"))
+        result.append(text)
     return result
 
 
