@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import copy
-import re
 import zipfile
 from pathlib import Path
 
@@ -109,9 +108,7 @@ def _update_matching_footnotes(
         for node in target.iter()
         if local_name(node) == "footNote"
     ]
-    source_text = re.sub(r"\s+", "", source.text)
-    target_text = re.sub(r"\s+", "", direct_text(target))
-    if source_text != target_text or len(note_ids) != len(controls):
+    if source.text != direct_text(target) or len(note_ids) != len(controls):
         return False
     for note_id, control in zip(note_ids, controls, strict=True):
         note_number[0] += 1

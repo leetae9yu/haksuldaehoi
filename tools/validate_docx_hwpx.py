@@ -21,8 +21,31 @@ def _normalized(parts: list[str]) -> str:
     return re.sub(r"\s+", "", "".join(parts))
 
 
+def _word_spaced(parts: list[str]) -> str:
+    return re.sub(r"\s+", " ", "".join(parts)).strip()
+
+
 def _has_ancestor(element: etree._Element, name: str) -> bool:
     return any(_local(parent) == name for parent in element.iterancestors())
+
+
+def _word_spaced_xml(
+    root: etree._Element,
+    break_names: set[str],
+    excluded_ancestors: set[str],
+) -> str:
+    parts: list[str] = []
+    for event, node in etree.iterwalk(root, events=("start", "end")):
+        if any(_has_ancestor(node, name) for name in excluded_ancestors):
+            continue
+        name = _local(node)
+        if event == "start" and name == "t":
+            parts.append(node.text or "")
+        elif event == "start" and name in break_names:
+            parts.append(" ")
+        elif event == "end" and name == "p":
+            parts.append("\n")
+    return _word_spaced(parts)
 
 
 def _docx_notes(
@@ -161,6 +184,11 @@ def validate_documents(
     source_body = _normalized(
         [node.text or "" for node in document.iter() if _local(node) == "t"]
     )
+    source_body_spaced = _word_spaced_xml(
+        document,
+        {"br", "tab"},
+        set(),
+    )
     candidate_body = _normalized(
         [
             node.text or ""
@@ -169,6 +197,11 @@ def validate_documents(
             and not _has_ancestor(node, "footNote")
             and not _has_ancestor(node, "fieldBegin")
         ]
+    )
+    candidate_body_spaced = _word_spaced_xml(
+        section,
+        {"lineBreak", "tab"},
+        {"footNote", "fieldBegin"},
     )
     source_bold = _docx_formatted_text(document, "b")
     source_underline = _docx_formatted_text(document, "u")
@@ -180,6 +213,7 @@ def validate_documents(
         "candidate_zip_valid": candidate_bad_member is None,
         "mimetype_stored": mimetype_stored,
         "body_text_matches": source_body == candidate_body,
+        "word_spacing_matches": source_body_spaced == candidate_body_spaced,
         "footnote_text_matches": _docx_notes(document, footnotes)
         == _hwpx_notes(section),
         "source_footnotes": len(_docx_notes(document, footnotes)),
@@ -211,6 +245,7 @@ def validate_documents(
             report["candidate_zip_valid"],
             report["mimetype_stored"],
             report["body_text_matches"],
+            report["word_spacing_matches"],
             report["footnote_text_matches"],
             report["source_tables"] == report["candidate_tables"],
             report["source_images"] == report["candidate_images"],
